@@ -41,6 +41,6 @@ INABILITY TO USE THESE SCRIPTS EVEN IF POINTWISE HAS BEEN ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGES AND REGARDLESS OF THE FAULT OR NEGLIGENCE OF
 POINTWISE.
 
-[Logo]: https://raw.github.com/dbgarlisch/CaeUnsGMesh/master/logo_dualmesh.png  "DualMesh Logo"
+[Logo]: https://raw.github.com/dbgarlisch/CaeUnsDualMesh/master/logo_dualmesh.png  "DualMesh Logo"
 [SDKdocs]: http://www.pointwise.com/plugins
 [SDKdownload]: http://www.pointwise.com/plugins/#sdk_downloads
