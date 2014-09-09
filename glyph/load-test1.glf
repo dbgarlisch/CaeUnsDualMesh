@@ -1,16 +1,59 @@
-# Pointwise V17.2R2
+# Pointwise V17.2R2 Journal file - Sun Aug 24 22:10:44 2014
 
 package require PWI_Glyph 2.17.2
 
 set pts [list]
 
-proc vertex { type ndx xyz } {
+proc setAttributes { obj {name false} {color "no_color"} {layer -1} } {
+    if { false != $name } {
+        $obj setName $name
+    }
+    if { [string is integer -strict $color] } {
+        $obj setColor $color
+        $obj setRenderAttribute ColorMode Entity
+        #$obj setRenderAttribute FillMode Shaded
+    } elseif { $color == "cycle" } {
+        pw::Entity cycleColors $obj
+        $obj setRenderAttribute ColorMode Entity
+        #$obj setRenderAttribute FillMode Shaded
+    }
+    if { $layer >= 0 } {
+        $obj setLayer $layer
+    }
+}
+
+set rgbRed    0xff0000
+set rgbYellow 0xffff00
+set rgbOrange 0xffa500
+set rgbWhite  0xffffff
+
+proc labelPt { ndx xyz {name false} {color ""} {layer -1} {noteHt 0.2} } {
+    set note [pw::Note create]
+    $note setText "$ndx"
+    $note setPosition $xyz
+    $note setSize $noteHt
+    setAttributes $note "note_$name" $color $layer
+    return $note
+}
+
+proc gceVertex { ndx xyz {color 0x5f5f5f} {layer 90} } {
+    set pt [pw::Point create]
+    $pt setPoint $xyz
+    set nm "gcePoint-$ndx"
+    $pt setName $nm
+    $pt setLayer $layer
+    #labelPt $ndx $xyz "gcePoint-$ndx" $color [incr layer] 0.2
+}
+
+proc vertex { type ndx xyz {color 0xffff00} {layer 100} } {
     global pts
     set pt [pw::Point create]
     $pt setPoint $xyz
-    $pt setName "dual${type}Point-$ndx"
-    $pt setLayer 100
+    set nm "dual${type}Point-$ndx"
+    $pt setName $nm
+    $pt setLayer $layer
     lappend pts $pt
+    #labelPt $ndx $xyz $nm $color [incr layer] 0.3
 }
 
 proc poly { type indices } {
@@ -40,7 +83,7 @@ proc createPolyCrv { polyXyz type } {
 
 proc createPolyNormalCrv { polyXyz } {
     set pt0 [polyCentroid $polyXyz]
-    set radius [expr {[polyRadius $pt0 $polyXyz] / 3.0}]
+    set radius [expr {[polyRadius $pt0 $polyXyz] / 2.0}]
     set norm [pwu::Vector3 scale [polyNormal $pt0 $polyXyz] $radius]
     set edge [list $pt0 [pwu::Vector3 add $pt0 $norm]]
     return [createCrv $edge "polyNorm-1" 400 #f00000]
