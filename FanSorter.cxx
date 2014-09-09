@@ -8,7 +8,7 @@
  *
  ***************************************************************************/
 
-#include <algorithm>
+//#include <algorithm>
 
 #include "apiPWP.h"
 #include "CaeUnsGridModel.h"
@@ -17,10 +17,10 @@
 #include "PwpFile.h"
 
 
-FanSorter::FanSorter(PwpFile &dumpFile) :
+FanSorter::FanSorter(PwpFile &dumpFile,
+        const EdgeToUInt32Map &hardGceEdgeToDualVert) :
     dumpFile_(dumpFile),
-    ecMap_(),
-    cellFanEdges_()
+    hardGceEdgeToDualVert_(hardGceEdgeToDualVert)
 {
 }
 
@@ -30,221 +30,203 @@ FanSorter::~FanSorter()
 }
 
 
-// macros to make code more readable
-#define itNextCellNdx       itNext->second
-#define cellLeftEdge(it)    it->second.first
-#define cellRightEdge(it)   it->second.second
-
-#if defined(WINDOWS) && _MSC_VER < 1600
-#pragma message ("Using compatibility functions for VS2008.")
-
-namespace std {
-
-    template<class IType1, class IType2>
-    IType2 move_backward(IType1 first, IType1 last, IType2 result)
-    {
-        while (last != first) {
-            *(--result) = *(--last);
-        }
-        return result;
-    }
-}
-
-#endif
-
-
 void
-FanSorter::sort(CaeUnsGridModel &model, PWP_UINT32 origVertNdx,
-    UInt32Array1 &fanCells, EdgeToUInt32Map &edgeToVertex)
+FanSorter::run(CaeUnsGridModel &model, PWP_UINT32 gceVertNdx,
+    const UInt32Array1 &fanCells, UInt32Array2 &fans)
 {
     if (dumpFile_.isOpen()) {
-        dumpFile_.write(origVertNdx, "\n", "\n# FanSorter::sort origVertNdx=");
+        dumpFile_.write(gceVertNdx, "\n", "\n# FanSorter::run gceVertNdx=");
     }
-    /*
-        fanCells is in an unspecified order. Each cell has a right-handed
-        winding order that contains origVertNdx. For example, cellD = (5,4,0).
-        We need to arrange cells around origVertNdx into a right-handed
-        cell-fan D-C-B-A. If origVertNdx is a boundary vertex, the cell-fan
-        arrangement will be open, similar to diagram below. If origVertNdx is an
+    /*  fanCells is in an unspecified order. Each cell has a right-handed
+        winding order that contains gceVertNdx. For example, cellD = (5,4,0).
+        We need to arrange cells around gceVertNdx into a right-handed
+        cell-fan D-C-B-A. If gceVertNdx is a boundary vertex, the cell-fan
+        arrangement will be open, similar to diagram below. If gceVertNdx is an
         interior vertex, the cell-fan will be closed.
 
                 2----3----4
-               / \ B | C / \       0 = origVertNdx
+               / \ B | C / \       0 = gceVertNdx
               /   \  |  /   \      edge(0,3) = cellB's right fan-edge
              /  A  \ | /  D  \     edge(3,0) = cellC's left fan-edge
             /       \|/       \    cellA     = (0,5,4)
            1---------0---------5   
     */
     PWGM_ELEMDATA ed;
-    EdgeToUInt32Map::value_type ecmVal;
-    EdgePair edgePair;
-    // Build EdgeToUInt32Map. This will be used to radially order the cells about
-    // origVertNdx.
+    FanCellArray1 fanCellArr;
+    fanCellArr.reserve(fanCells.size());
     UInt32Array1::const_iterator itNdx = fanCells.begin();
     for (; itNdx != fanCells.end(); ++itNdx) {
         const PWP_UINT32 cellNdx = *itNdx;
-        // Preload map value. cellNdx will not change for rest of loop.
-        ecmVal.second = cellNdx;
         if (!CaeUnsElement(model, cellNdx).data(ed)) {
             // very bad! exception?
             continue;
         }
+        // Load fanCellArr for processing below
         for (PWP_UINT32 ii = 0; ii < ed.vertCnt; ++ii) {
-            if (ed.index[ii] == origVertNdx) {
-                // rotate vertices to make origVertNdx first
+            if (ed.index[ii] == gceVertNdx) {
+                // rotate cell vertices to make gceVertNdx first
                 std::rotate(ed.index, ed.index + ii, ed.index + ed.vertCnt);
-                // ecmVal.first is const! Cast to a non-const ref so we can
-                // update the working edge data before adding it to ecMap_.
-                // This approach is assumed to be more efficient than
-                // constructing EdgeToUInt32Map::value_type temp vals for every
-                // call to insert().
-                Edge &ecmEdge = const_cast<Edge&>(ecmVal.first);
-                // Cell edges stored in ecMap_ in reverse direction because that
-                // is the direction for which the neighbor cells will be
-                // searching.
-
-                // Reverse edge from origVertNdx to ii+1 vert index.
-                ecmEdge[0] = ed.index[1];
-                ecmEdge[1] = origVertNdx;
-                ecMap_.insert(ecmVal);
-                // store cell's right fan-edge (forward direction).
-                edgePair.second[0] = ecmEdge[1];
-                edgePair.second[1] = ecmEdge[0];
-
-                // Reverse edge from last vert index to origVertNdx.
-                ecmEdge[0] = origVertNdx;
-                ecmEdge[1] = ed.index[ed.vertCnt - 1];
-                ecMap_.insert(ecmVal);
-                // store cell's left fan-edge (forward direction).
-                edgePair.first[0] = ecmEdge[1];
-                edgePair.first[1] = ecmEdge[0];
-                cellFanEdges_.insert(UInt32ToEdgePair::value_type(cellNdx, edgePair));
+                fanCellArr.push_back(FanCell(cellNdx, ed.index));
+                // all done with this fan cell
                 break;
             }
         }
         if (dumpFile_.isOpen()) {
-            dumpFile_.write(cellNdx, " { ", "#    cell ndx=");
-            for (PWP_UINT32 ii = 0; ii < ed.vertCnt; ++ii) {
-                dumpFile_.write(ed.index[ii], " ");
+            const FanCell &c = fanCellArr.back();
+            dumpFile_.write(c.cellNdx_, " { ", "#    cell ndx=");
+            for (PWP_UINT32 ii = 0; ii < 3; ++ii) {
+                dumpFile_.write(c.indices_[ii], " ");
             }
-            dumpFile_.write(edgePair.first[0], " ", " } / leftEdge { ");
-            dumpFile_.write(edgePair.first[1], " }  rightEdge { ");
-            dumpFile_.write(edgePair.second[0], " ");
-            dumpFile_.write(edgePair.second[1], " }\n");
-        }
-    }
-
-    if (dumpFile_.isOpen()) {
-        dumpFile_.write("# ecMap_\n");
-        EdgeToUInt32Map::const_iterator it = ecMap_.begin();
-        for (; it != ecMap_.end(); ++it) {
-            dumpFile_.write(it->first[0], " ", "#    edge { ");
-            dumpFile_.write(it->first[1], " } ");
-            dumpFile_.write(it->second, "\n", "cell=");
-        }
-        dumpFile_.write("# edgeToVertex\n");
-        it = edgeToVertex.begin();
-        for (; it != edgeToVertex.end(); ++it) {
-            dumpFile_.write(it->first[0], " ", "#    edge { ");
-            dumpFile_.write(it->first[1], " } ");
-            dumpFile_.write(it->second, "\n", "vert=");
+            Edge e = c.leftEdge();
+            dumpFile_.write(e[0], " ", " } / leftEdge { ");
+            dumpFile_.write(e[1], " }  rightEdge { ");
+            e = c.rightEdge();
+            dumpFile_.write(e[0], " ");
+            dumpFile_.write(e[1], " }\n");
         }
     }
 
     // Sort the cells by walking their right edges.
-    bool isClosed = false;
-    // Arbitrarily start fan at first cell in fanCells.
-    PWP_UINT32 startCellNdx = fanCells.at(0);
-    // The majority of fans will be closed (origVertNdx is interior). Walking
-    // the left cell-edges first will be the fastest. The over-head of
-    // walkRight() is only be need for open fans (origVertNdx is boundary).
-    UInt32Array1::iterator itCell = fanCells.begin();
-    // walkLeft() will assign fan ordered cell indices starting at ++itCell.
-    walkLeft(startCellNdx, ++itCell, isClosed);
-    if (!isClosed) {
-        // Only need walkRight() if startCellNdx was in the middle of the fan
-        if (fanCells.end() != itCell) {
-            // Shift left cells to end of array to make room for right cells
-            itCell = std::move_backward(fanCells.begin(), itCell, fanCells.end());
-            // Fan is not closed. Finish the sort by walking the remaining cells
-            // by their right edges.
-            walkRight(startCellNdx, itCell, isClosed);
-        }
-        // The fan does not include the boundary dual vertices
-        UInt32ToEdgePair::const_iterator itCellEdgePair;
-        EdgeToUInt32Map::const_iterator itEdgeVert;
-        // append left-most edge vertex
-        itCellEdgePair = cellFanEdges_.find(fanCells.back());
-        if (cellFanEdges_.end() != itCellEdgePair) {
-            itEdgeVert = edgeToVertex.find(cellLeftEdge(itCellEdgePair));
-            if (edgeToVertex.end() != itEdgeVert) {
-                fanCells.insert(fanCells.end(), itEdgeVert->second);
+    UInt32Array1 runLength;
+    bool isClosed = run2(fanCellArr, runLength);
+
+    // build return array
+    EdgeToUInt32Map::const_iterator itEdgeVert;
+    FanCellArray1::const_iterator itFanCell = fanCellArr.begin();
+    FanCellArray1::const_iterator itLastFanCell;
+    UInt32Array1::iterator itRunLength = runLength.begin();
+    for (; itRunLength != runLength.end(); ++itRunLength) {
+        UInt32Array1 fan;
+        if (!isClosed) {
+            // cacheThis for below
+            itLastFanCell = itFanCell + (*itRunLength - 1);
+            // add right hard edge vertex
+            if (findHardEdge(itFanCell->rightEdge(), itEdgeVert)) {
+                fan.push_back(itEdgeVert->second);
+            }
+            else {
+                fail("Could not find right hard edge");
             }
         }
-        // prepend right-most edge vertex
-        itCellEdgePair = cellFanEdges_.find(fanCells.front());
-        if (cellFanEdges_.end() != itCellEdgePair) {
-            itEdgeVert = edgeToVertex.find(cellRightEdge(itCellEdgePair));
-            if (edgeToVertex.end() != itEdgeVert) {
-                fanCells.insert(fanCells.begin(), itEdgeVert->second);
-            }
+        // Add cell centroid indices
+        for (PWP_UINT32 n = 0; n < *itRunLength; ++n) {
+            fan.push_back(itFanCell->cellNdx_);
+            ++itFanCell;
         }
+        if (!isClosed) {
+            // add left hard edge vertex
+            if (findHardEdge(itLastFanCell->leftEdge(), itEdgeVert)) {
+                fan.push_back(itEdgeVert->second);
+            }
+            else {
+                fail("Could not find left hard edge");
+            }
+            *itRunLength = PWP_UINT32(fan.size());
+        }
+        fans.push_back(fan);
     }
 }
 
 
-void
-FanSorter::walkLeft(PWP_UINT32 cellNdx,
-    UInt32Array1::iterator &itCell, bool &isClosed)
+bool
+FanSorter::findHardEdge(Edge edge, EdgeToUInt32Map::const_iterator &it)
 {
-    isClosed = false;
-    EdgeToUInt32Map::const_iterator itNext;
-    UInt32ToEdgePair::const_iterator itCellEdgePair =
-        cellFanEdges_.find(cellNdx);
-    if (cellFanEdges_.end() != itCellEdgePair) {
-        itNext = ecMap_.find(cellLeftEdge(itCellEdgePair));
-        while (ecMap_.end() != itNext) {
-            if (cellNdx == itNextCellNdx) {
-                // We have wrapped back to starting cellNdx!
-                isClosed = true;
-                break;
-            }
-            *itCell++ = itNextCellNdx;
-            itCellEdgePair = cellFanEdges_.find(itNextCellNdx);
-            if (cellFanEdges_.end() == itCellEdgePair) {
-                break;
-            }
-            itNext = ecMap_.find(cellLeftEdge(itCellEdgePair));
-        }
+    it = hardGceEdgeToDualVert_.find(edge);
+    if (hardGceEdgeToDualVert_.end() == it) {
+        std::swap(edge[0], edge[1]);
+        it = hardGceEdgeToDualVert_.find(edge);
     }
+    return hardGceEdgeToDualVert_.end() != it;
 }
 
 
-void
-FanSorter::walkRight(PWP_UINT32 cellNdx,
-    UInt32Array1::iterator &itCell, bool &isClosed)
+bool
+FanSorter::run2(FanCellArray1 &fanCells, UInt32Array1 &runLength)
 {
-    isClosed = false;
-    EdgeToUInt32Map::const_iterator itNext;
-    UInt32ToEdgePair::const_iterator itCellEdgePair = cellFanEdges_.find(cellNdx);
-    if (cellFanEdges_.end() != itCellEdgePair) {
-        itNext = ecMap_.find(cellRightEdge(itCellEdgePair));
-        while (ecMap_.end() != itNext) {
-            if (cellNdx == itNextCellNdx) {
-                // We have wrapped back to starting cellNdx!
-                isClosed = true;
-                break;
-            }
-            *(--itCell) = itNextCellNdx;
-            itCellEdgePair = cellFanEdges_.find(itNextCellNdx);
-            if (cellFanEdges_.end() == itCellEdgePair) {
-                break;
-            }
-            itNext = ecMap_.find(cellRightEdge(itCellEdgePair));
-        }
+    bool ret = false;
+    runLength.clear();
+    FanCellArray1::iterator itRngRight;
+    FanCellArray1::iterator itRngLeft;
+    FanCellArray1::iterator itBegin = fanCells.begin();
+    while (fanCells.end() != itBegin) {
+        ret = sortFanCellRange(fanCells, itBegin, itRngRight, itRngLeft);
+        runLength.push_back(PWP_UINT32(std::distance(itRngRight, itRngLeft)));
+        itBegin = itRngLeft;
     }
+    return ret;
 }
 
-#undef itNextCellNdx
-#undef cellLeftEdge
-#undef cellRightEdge
+
+bool
+FanSorter::sortFanCellRange(FanCellArray1 &fanCells,
+    FanCellArray1::iterator itBegin, FanCellArray1::iterator &itRngRight,
+    FanCellArray1::iterator &itRngLeft)
+{
+    bool ret = false;
+    // Init range to only include itBegin.
+    itRngRight = itBegin;
+    itRngLeft = itBegin + 1;
+    FanCellArray1::iterator itPivot = itRngRight;
+    bool foundNext = true;
+    FanCellArray1::iterator itCandidate = itRngLeft;
+    EdgeToUInt32Map::const_iterator itHardEdges = hardGceEdgeToDualVert_.end();
+    while ((fanCells.end() != itCandidate) && foundNext) {
+        foundNext = false;
+        while (fanCells.end() != itCandidate) {
+            if (itHardEdges !=
+                    hardGceEdgeToDualVert_.find(itPivot->leftEdge())) {
+                // left edge is hard, can't walk across it!
+                break;
+            }
+            // Is itPivot's left edge == reverse of candidate's right edge?
+            if (itPivot->leftEdge() == itCandidate->rightEdge(false)) {
+                // Make itCandidate the next leftmost FanCell in range.
+                if (itRngLeft != itCandidate) {
+                    std::swap(*itRngLeft, *itCandidate);
+                }
+                // Make itPivot ref the candidate just added. We want to match
+                // to this one now.
+                itPivot = itRngLeft;
+                // Reset itCandidate for next pass
+                itCandidate = ++itRngLeft;
+                foundNext = true;
+                break;
+            }
+            // Did not find match, try next FanCell
+            ++itCandidate;
+        }
+    }
+    // foundNext will only be true if all FanCells matched above. Is fan closed?
+    if (foundNext) {
+        ret = (itPivot->leftEdge() == itRngRight->rightEdge(false));
+    }
+    // Match remaining FanCells against right edge
+    foundNext = true;
+    itPivot = itRngRight;
+    itCandidate = itRngLeft;
+    while ((fanCells.end() != itCandidate) && foundNext) {
+        foundNext = false;
+        while (fanCells.end() != itCandidate) {
+            Edge pivotRightEdge(itPivot->rightEdge());
+            if (itHardEdges != hardGceEdgeToDualVert_.find(pivotRightEdge)) {
+                // right edge is hard, can't walk across it!
+                break;
+            }
+            // Is right edge of range's rightmost fanCell == reverse of
+            // candidate's left edge?
+            if (pivotRightEdge == itCandidate->leftEdge(false)) {
+                // Edges match! Make itCandidate the start of range.
+                FanCell tmp = *itCandidate;
+                fanCells.erase(itCandidate);
+                // Insert tmp before itPivot and make itPivot ref tmp
+                itPivot = fanCells.insert(itPivot, tmp);
+                // range shifted to left one more FanCell
+                itCandidate = ++itRngLeft;
+                foundNext = true;
+                break;
+            }
+            ++itCandidate;
+        }
+    }
+    return ret;
+}
