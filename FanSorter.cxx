@@ -18,9 +18,11 @@
 
 
 FanSorter::FanSorter(PwpFile &dumpFile,
-        const EdgeToUInt32Map &hardGceEdgeToDualVert) :
+        const EdgeToUInt32Map &hardGceEdgeToDualVert,
+        const UInt32ToUInt32Map &hardGceVertToDualVert) :
     dumpFile_(dumpFile),
-    hardGceEdgeToDualVert_(hardGceEdgeToDualVert)
+    hardGceEdgeToDualVert_(hardGceEdgeToDualVert),
+    hardGceVertToDualVert_(hardGceVertToDualVert)
 {
 }
 
@@ -90,6 +92,16 @@ FanSorter::run(CaeUnsGridModel &model, PWP_UINT32 gceVertNdx,
     UInt32Array1 runLength;
     bool isClosed = run2(fanCellArr, runLength);
 
+    // If gceVertNdx was exported, we need to include it in the polygon 
+    PWP_UINT32 gceVertDualNdx = 0;
+    bool includeGceVertNdx = false;
+    UInt32ToUInt32Map::const_iterator it =
+        hardGceVertToDualVert_.find(gceVertNdx);
+    if (hardGceVertToDualVert_.end() != it) {
+        includeGceVertNdx = true;
+        gceVertDualNdx = it->second;
+    }
+
     // build return array
     EdgeToUInt32Map::const_iterator itEdgeVert;
     FanCellArray1::const_iterator itFanCell = fanCellArr.begin();
@@ -120,6 +132,9 @@ FanSorter::run(CaeUnsGridModel &model, PWP_UINT32 gceVertNdx,
             }
             else {
                 fail("Could not find left hard edge");
+            }
+            if (includeGceVertNdx) {
+                fan.push_back(gceVertDualNdx);
             }
             *itRunLength = PWP_UINT32(fan.size());
         }

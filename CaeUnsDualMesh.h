@@ -39,11 +39,15 @@ public:
 
 private: // base class virtual methods
 
+    enum VertType {
+        BndryVert, ElemVert, CnxnVert, GceVert
+    };
+
     virtual bool        beginExport();
     virtual PWP_BOOL    write();
 
     void    addElement(PWP_UINT32 elemNdx, const PWGM_ELEMDATA &ed);
-    void    writeVertex(PWP_UINT32 elemNdx, const Vec3 &v);
+    void    writeVertex(PWP_UINT32 elemNdx, const Vec3 &v, VertType vType);
     void    writeGceVertices();
     bool    writePolys();
     void    writePoly(PWP_UINT32 gceVertNdx, const UInt32Array1 &cellIndices);
@@ -63,6 +67,9 @@ private: // base class virtual methods
 
 private:
 
+    //! Cosine of the max hard edge turning angle
+    PWP_REAL                cosMaxTurnAngle_;
+
     //! The debug dump file
     PwpFile                 dumpFile_;
 
@@ -71,6 +78,9 @@ private:
 
     //! Maps a gce vertNdx to hardGceEdges_ indices that touch it
     UInt32UInt32Array1MMap  gceVertToHardGceEdges_;
+
+    // Maps a hard gce vertex index to its dual index.
+    UInt32ToUInt32Map       hardGceVertToDualVert_;
 
     // Maps a gce edge to its dual mesh vertex index.
     EdgeToUInt32Map         hardGceEdgeToDualVert_;

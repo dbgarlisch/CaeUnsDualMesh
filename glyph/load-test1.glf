@@ -27,6 +27,7 @@ set rgbYellow 0xffff00
 set rgbOrange 0xffa500
 set rgbWhite  0xffffff
 
+
 proc labelPt { ndx xyz {name false} {color ""} {layer -1} {noteHt 0.2} } {
     set note [pw::Note create]
     $note setText "$ndx"
@@ -45,15 +46,23 @@ proc gceVertex { ndx xyz {color 0x5f5f5f} {layer 90} } {
     #labelPt $ndx $xyz "gcePoint-$ndx" $color [incr layer] 0.2
 }
 
-proc vertex { type ndx xyz {color 0xffff00} {layer 100} } {
-    global pts
+set vertColor(Bndry) $rgbWhite
+set vertColor(Elem)  $rgbOrange
+set vertColor(Cnxn)  $rgbYellow
+set vertColor(Gce)   $rgbRed
+
+set vertLayer(Bndry) 101
+set vertLayer(Elem)  100
+set vertLayer(Cnxn)  102
+set vertLayer(Gce)   103
+
+proc vertex { type ndx xyz } {
+    global pts vertColor vertLayer
     set pt [pw::Point create]
     $pt setPoint $xyz
-    set nm "dual${type}Point-$ndx"
-    $pt setName $nm
-    $pt setLayer $layer
-    lappend pts $pt
+    setAttributes $pt "dual${type}Point-$ndx" $vertColor($type) $vertLayer($type)
     #labelPt $ndx $xyz $nm $color [incr layer] 0.3
+    lappend pts $pt
 }
 
 proc poly { type indices } {

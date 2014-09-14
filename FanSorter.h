@@ -93,7 +93,8 @@ typedef std::vector<FanCell>    FanCellArray1;
 class FanSorter {
 public:
 
-    FanSorter(PwpFile &dumpFile, const EdgeToUInt32Map &hardGceEdgeToDualVert);
+    FanSorter(PwpFile &dumpFile, const EdgeToUInt32Map &hardGceEdgeToDualVert,
+        const UInt32ToUInt32Map &hardGceVertToDualVert);
     ~FanSorter();
 
     void        run(CaeUnsGridModel &model, PWP_UINT32 gceVertNdx,
@@ -113,8 +114,9 @@ private:
 
 
 private:
-    PwpFile &               dumpFile_;
-    const EdgeToUInt32Map & hardGceEdgeToDualVert_;
+    PwpFile &                   dumpFile_;
+    const EdgeToUInt32Map &     hardGceEdgeToDualVert_;
+    const UInt32ToUInt32Map &   hardGceVertToDualVert_;
 };
 
 #endif

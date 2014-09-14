@@ -32,6 +32,7 @@ typedef std::vector<PWP_UINT32>                     UInt32Array1;
 typedef std::vector<UInt32Array1>                   UInt32Array2;
 typedef std::vector<Edge>                           EdgeArray1;
 typedef std::map<Edge, PWP_UINT32>                  EdgeToUInt32Map;
+typedef std::map<PWP_UINT32, PWP_UINT32>            UInt32ToUInt32Map;
 typedef STDTR1::unordered_set<PWP_UINT32>           UInt32Set;
 typedef std::multimap<PWP_UINT32, PWP_UINT32>       UInt32UInt32Array1MMap;
 

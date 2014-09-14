@@ -16,7 +16,8 @@
 #include "FanSorter.h"
 #include "PluginTypes.h"
 
-const char *attrDebugDump           = "DebugDump";
+static const char *attrDebugDump    = "DebugDump";
+static const char *attrMaxTurnAngle = "MaxTurnAngle";
 
 
 //***************************************************************************
@@ -57,9 +58,11 @@ projectPtToLineSeg(const Vec3 &pt, const Vec3 &v0, const Vec3 &v1, Vec3 &projPt)
 CaeUnsDualMesh::CaeUnsDualMesh(CAEP_RTITEM *pRti, PWGM_HGRIDMODEL
         model, const CAEP_WRITEINFO *pWriteInfo) :
     CaeUnsPlugin(pRti, model, pWriteInfo),
+    cosMaxTurnAngle_(0.0),
     dumpFile_(),
     gceVertToGceCells_(),
     gceVertToHardGceEdges_(),
+    hardGceVertToDualVert_(),
     hardGceEdgeToDualVert_(),
     hardGceVerts_(),
     hardGceEdges_(),
@@ -87,6 +90,12 @@ CaeUnsDualMesh::beginExport()
     */
     PWP_BOOL doDump;
     model_.getAttribute(attrDebugDump, doDump);
+
+    const double Deg2Rad = 3.1415926535897932384626433832795 / 180.0;
+    PWP_REAL maxTurnAngle;
+    model_.getAttribute(attrMaxTurnAngle, maxTurnAngle);
+    cosMaxTurnAngle_ = cos(maxTurnAngle * Deg2Rad);
+
     char filename[512];
     strcpy(filename, writeInfo_.fileDest);
     strcat(filename, ".dump");
@@ -102,7 +111,7 @@ CaeUnsDualMesh::beginExport()
             sendErrorMsg("debug dump file open failed!", 0);
         }
     }
-    setProgressMajorSteps(3);
+    setProgressMajorSteps(4);
     return true;
 }
 
@@ -119,7 +128,7 @@ CaeUnsDualMesh::write()
         PWP_UINT32 dualNdx = 0;
         CaeUnsElement elem(model_);
         while (elem.data(ed)) {
-            writeVertex(dualNdx++, centroid(ed));
+            writeVertex(dualNdx++, centroid(ed), ElemVert);
             addElement(elem.index(), ed);
             if (!progressIncrement()) {
                 ret = false;
@@ -149,10 +158,16 @@ CaeUnsDualMesh::addElement(PWP_UINT32 elemNdx, const PWGM_ELEMDATA &ed)
 
 
 void
-CaeUnsDualMesh::writeVertex(PWP_UINT32 dualNdx, const Vec3 &v)
+CaeUnsDualMesh::writeVertex(PWP_UINT32 dualNdx, const Vec3 &v, VertType vType)
 {
+    static const char *vertTypeNames[] = {
+                            "Bndry ", // BndryVert,
+                            "Elem ",  // ElemVert,
+                            "Cnxn ",  // CnxnVert,
+                            "Gce "    // GceVert
+                        };
     rtFile_.write("vertex ");
-    rtFile_.write((dualNdx < numCentroids_) ? "E " : "B ");
+    rtFile_.write(vertTypeNames[vType]);
     rtFile_.write(dualNdx, " { ");
     rtFile_.write(v[0], " ");
     rtFile_.write(v[1], " ");
@@ -204,7 +219,8 @@ CaeUnsDualMesh::writePolys()
             }
             // Sort cell indices in radial order around gce vertex. Multiple
             // fans are possible if hard edges are encountered.
-            FanSorter sorter(dumpFile_, hardGceEdgeToDualVert_);
+            FanSorter sorter(dumpFile_, hardGceEdgeToDualVert_,
+                hardGceVertToDualVert_);
             UInt32Array2 fans;
             sorter.run(model_, rng.first->first, fanCells, fans);
             UInt32Array2::const_iterator itFan = fans.begin();
@@ -283,7 +299,83 @@ CaeUnsDualMesh::streamFace(const PWGM_FACESTREAM_DATA &data)
 PWP_UINT32
 CaeUnsDualMesh::streamEnd(const PWGM_ENDSTREAM_DATA &data)
 {
-    return progressEndStep() && data.ok;
+    PWP_UINT32 ret = progressEndStep() && data.ok &&
+        progressBeginStep(PWP_UINT32(hardGceVerts_.size()));
+    if (ret) {
+        // capture starting dual index for any exported GCE points
+        PWP_UINT32 dualNdx = numCnxnMids_ + numBndryMids_ + numCentroids_;
+        std::pair<UInt32UInt32Array1MMap::iterator,
+            UInt32UInt32Array1MMap::iterator> rng;
+        // The do/while loop expects rng.second to be the "end" of the previous
+        // loop. Must set rng.second for first pass.
+        rng.second = gceVertToHardGceEdges_.begin();
+        do {
+            PWP_UINT32 gceVertNdx = rng.second->first;
+            // Grab range using key from rng.second. After call, rng.first is
+            // the FIRST multimap item with key. rng.second is item just after
+            // LAST multimap item with key (first item in next range).
+            rng = gceVertToHardGceEdges_.equal_range(gceVertNdx);
+            // assume we are not exporting this GCE point
+            bool exportGceVertex = false;
+            if (2 == std::distance(rng.first, rng.second)) {
+                // Get the 2 hard edges radiating from gceVertNdx and force
+                // gceVertNdx to be first
+                Edge e0(hardGceEdges_.at(rng.first->second));
+                if (e0[0] != gceVertNdx) {
+                    std::swap(e0[0], e0[1]);
+                }
+                ++rng.first;
+                Edge e1(hardGceEdges_.at(rng.first->second));
+                if (e1[0] != gceVertNdx) {
+                    std::swap(e1[0], e1[1]);
+                }
+                if ((e0[0] != gceVertNdx) || (e1[0] != gceVertNdx)) {
+                    // should never get here
+                    ret = 0;
+                    break;
+                }
+                // if angle between hard edges e0/e1 > limit, export the gce vertex
+                Vec3 v0;
+                Vec3 v1;
+                Vec3 v2;
+                if (!getCoord(gceVertNdx, v0) || !getCoord(e0[1], v1) ||
+                        !getCoord(e1[1], v2)) {
+                    ret = 0;
+                    break;
+                }
+                double d = cml::dot((v1 - v0).normalize(),
+                                    (v0 - v2).normalize());
+                if (d < cosMaxTurnAngle_) {
+                    exportGceVertex = true;
+                }
+            }
+            else if (2 < std::distance(rng.first, rng.second)) {
+                // Always export when more than 2 hard egdes touch gceVertNdx
+                exportGceVertex = true;
+            }
+            else {
+                // should never get here
+                ret = 0;
+                break;
+            }
+            if (exportGceVertex) {
+                Vec3 v;
+                if (!getCoord(gceVertNdx, v)) {
+                    ret = 0;
+                    break;
+                }
+                // add gce to dual vertex mapping
+                hardGceVertToDualVert_.insert(
+                    UInt32ToUInt32Map::value_type(gceVertNdx, dualNdx));
+                writeVertex(dualNdx++, v, GceVert);
+            }
+            if (!progressIncrement()) {
+                ret = 0;
+                break;
+            }
+        } while (gceVertToHardGceEdges_.end() != rng.second);
+    }
+    return progressEndStep() && ret;
 }
 
 
@@ -296,7 +388,7 @@ CaeUnsDualMesh::handleBndryFace(const PWGM_FACESTREAM_DATA &data)
     bool ret = false;
     Vec3 pt;
     if (projectCellCentroidToEdge(data.owner.cellIndex, data.elemData, pt)) {
-        writeVertex(dualNdx, pt);
+        writeVertex(dualNdx, pt, BndryVert);
         ret = true;
     }
     return ret;
@@ -316,7 +408,7 @@ CaeUnsDualMesh::handleCnxnFace(const PWGM_FACESTREAM_DATA &data)
     Vec3 pt1;
     if (projectCellCentroidToEdge(data.owner.cellIndex, data.elemData, pt0) &&
             projectCellCentroidToEdge(data.neighborCellIndex, data.elemData, pt1)) {
-        writeVertex(dualNdx, (pt0 += pt1) /= 2.0);
+        writeVertex(dualNdx, (pt0 += pt1) /= 2.0, CnxnVert);
         ret = true;
     }
     ++numCnxnMids_;
@@ -401,7 +493,9 @@ CaeUnsDualMesh::create(CAEP_RTITEM &rti)
 {
     (void)rti.BCCnt; // silence unused arg warning
     return publishBoolValueDef(rti, attrDebugDump, "no",
-        "Generate a debug dump file?", "no|yes");
+        "Generate a debug dump file?", "no|yes") &&
+        publishRealValueDef(rti, attrMaxTurnAngle, 30.0,
+            "Hard edge max turning angle", 0.0, 180.0, 5.0, 90.0);
 }
 
 
