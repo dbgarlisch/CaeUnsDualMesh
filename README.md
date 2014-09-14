@@ -4,12 +4,18 @@ surface grid to its polygon dual mesh.
 
 ![DualMesh][Logo]
 
+
 ## Limitations
 Currently, the polygon dual mesh is exported as a glyph script. To visualize 
 the results, the exported script can be loaded into Pointwise as database 
 entities using `load-test1.glf`.
 
+
 ## Building the Plugin
+
+This plugin was created using version 1.0 R7 of the Pointwise CAE Plugin SDK.
+However, it should build properly with newer versions of the SDK.
+
 To build the DualMesh plugin you must integrate this source code into your local PluginSDK 
 installation by following these steps.
 
@@ -17,8 +23,24 @@ installation by following these steps.
 * Configure and validate the SDK following the [SDK's instructions][SDKdocs].
 * Create a DualMesh plugin project using the mkplugin script: `mkplugin -uns -cpp DualMesh`
 * Replace the project's generated files with the files from this repository.
+* Follow the platform specific instuctions below.
 
-This plugin was created using version 1.0 R7 of the Pointwise CAE Plugin SDK.
+### Building the Plugin with Microsoft Visual Studio
+
+* Open the Plugin SDK Visual Studio solution file.
+ * For VS2008 open `PluginSDK\PluginSDK.sln`
+ * For VS2012 open `PluginSDK\PluginSDK_vs2012.sln`
+* Add the existing CaeUnsDualMesh project file to the solution *Plugins* folder.
+ * For VS2008 add `PluginSDK\src\plugins\CaeUnsDualMesh\CaeUnsDualMesh.vcproj`
+ * For VS2012 add `PluginSDK\src\plugins\CaeUnsDualMesh\CaeUnsDualMesh.vcxproj`
+* Add the following source files to the *CaeUnsDualMesh* project
+ * `FanSorter.cxx`
+ * `FanSorter.h`
+ * `PluginTypes.h`
+
+### Building the Plugin with Mac OS/X and Linux
+
+* Nothing more needs to be done.
 
 
 ## Disclaimer
