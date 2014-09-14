@@ -9,9 +9,6 @@ Currently, the polygon dual mesh is exported as a glyph script. To visualize
 the results, the exported script can be loaded into Pointwise as database 
 entities using `load-test1.glf`.
 
-The conversion logic does not properly handle sharp corners (yet). This results 
-in a loss of precision.
-
 ## Building the Plugin
 To build the DualMesh plugin you must integrate this source code into your local PluginSDK 
 installation by following these steps.
