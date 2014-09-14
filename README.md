@@ -24,6 +24,10 @@ installation by following these steps.
 * Create a DualMesh plugin project using the mkplugin script: `mkplugin -uns -cpp DualMesh`
 * Replace the project's generated files with the files from this repository.
 * Follow the platform specific instuctions below.
+* This plugin uses the Configurable Math Library. You can download it from the [CML website][CMLwebsite].
+ * The cml must be installed in the same parent folder as PluginSDK. That is:
+  * `/the/path/to/your/PluginSDK/`
+  * `/the/path/to/your/cml/`
 
 ### Building the Plugin with Microsoft Visual Studio
 
@@ -63,3 +67,4 @@ POINTWISE.
 [Logo]: https://raw.github.com/dbgarlisch/CaeUnsDualMesh/master/logo_dualmesh.png  "DualMesh Logo"
 [SDKdocs]: http://www.pointwise.com/plugins
 [SDKdownload]: http://www.pointwise.com/plugins/#sdk_downloads
+[CMLwebsite]: http://cmldev.net/
