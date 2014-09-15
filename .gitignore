@@ -5,6 +5,7 @@
 *.suo
 *.user
 *.sln.docstates
+glyph/*.out
 
 # Build results
 [Dd]ebug/

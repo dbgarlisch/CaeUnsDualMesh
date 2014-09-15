@@ -6,9 +6,53 @@ surface grid to its polygon dual mesh.
 
 
 ## Limitations
-Currently, the polygon dual mesh is exported as a glyph script. To visualize 
-the results, the exported script can be loaded into Pointwise as database 
-entities using `load-test1.glf`.
+
+Currently, the polygon dual mesh is exported as a Pointwise Glyph script of 
+the form shown below. The `vertex` and `poly` procs are not provided and 
+must be implmented by the user. See `importDualMesh.glf` for an example 
+implementation.
+
+```Tcl
+# Element centroid points 6
+vertex Elem 0 {  2.9436843  5.0580130  0.0000000 }
+vertex Elem 1 {  7.5634270  3.0293195  0.0000000 }
+      ...snip...
+vertex Elem 5 {  7.4581337  5.0316663  0.0000000 }
+# boundary mid points 6
+vertex Bndry 6 {  1.8695128  5.7636914  0.0000000 }
+vertex Bndry 7 {  8.5653372  2.3663046  0.0000000 }
+      ...snip...
+vertex Hard 16 {  9.7102060  4.0963645  0.0000000 }
+vertex Hard 17 {  7.3805919  7.0603647  0.0000000 }
+poly Bndry { 6 0 3 9 12 }
+poly Bndry { 10 4 0 6 13 }
+      ...snip...
+poly Bndry { 9 3 5 11 17 }
+poly Interior { 0 4 2 1 5 3 }
+```
+
+## Viewing the Dual Mesh CAE Export in Pointwise
+
+The distro's `glyph` folder contains two Glyph scripts, `exportDualMesh.glf` 
+and `importDualMesh.glf` that can be used to visualize the dual mesh results 
+in Pointwise.
+
+### The `exportDualMesh.glf` Glyph Script
+
+After loading a grid into Pointwise, run this script to export the grid to the 
+file `DualMeshData.out` and then immediately import `DualMeshData.out` back 
+into Pointwise using the `importDualMesh.glf` script.
+
+If no domains are present when `exportDualMesh.glf` is run, the file `test1.pw` 
+is loaded and processed.
+
+### The `importDualMesh.glf` Glyph Script
+ 
+This script loads the contents of a dual mesh export file named `DualMeshData.out`
+and creates database entities representing the dual mesh vertices, polygons, and 
+polygon centroid normals. These entities are placed in several layers that can be 
+turned on or off as needed. The `DualMeshData.out` file must reside in the same 
+folder as the script.
 
 
 ## Building the Plugin
